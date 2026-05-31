@@ -468,7 +468,7 @@
     let client = null;
     
     const SERVER_HOST = "broker.hivemq.com";
-    const SERVER_PORT = 8000; 
+    const SERVER_PORT = 8884; // De standaardpoort voor WSS (Secure)
     const SERVER_PATH = "/mqtt";
 
     // Lokale loper status data
@@ -602,8 +602,9 @@
       };
 
       client.connect({
-        useSSL: false, timeout: 5,
-        onSuccess: () => {
+        useSSL: true, // Belangrijk voor HTTPS omgevingen zoals GitHub/SharePoint
+    timeout: 5,
+    onSuccess: () => {
           document.getElementById('syncDot').classList.add('connected');
           document.getElementById('syncStatusText').textContent = "Live Verbonden";
           
