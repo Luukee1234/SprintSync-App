@@ -1,0 +1,1159 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>SprintSync | LO Multi-Tijdmeting</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js" type="text/javascript"></script>
+  <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+  <style>
+    :root {
+      --blue: #0067ac;
+      --blue-dark: #004f84;
+      --blue-light: #e8f4ff;
+      --green: #00a86b;
+      --orange: #f5a623;
+      --red: #d0021b;
+      --bg: #f4f7fa;
+      --white: #ffffff;
+      --text: #1e293b;
+      --text-muted: #64748b;
+      --shadow: 0 10px 30px rgba(0,103,172,0.08);
+      --radius: 16px;
+      --gold: #ffd700;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    body {
+      font-family: '-apple-system', BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+      touch-action: manipulation;
+    }
+    
+    #selectScreen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+      background: linear-gradient(135deg, #002f52 0%, #0067ac 50%, #0284c7 100%);
+      color: #fff;
+    }
+    .config-card {
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 24px;
+      padding: 32px;
+      width: 100%;
+      max-width: 550px;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+    }
+    .logo { font-size: 44px; text-align: center; margin-bottom: 8px; }
+    h1 { font-size: 26px; font-weight: 800; text-align: center; letter-spacing: -0.5px; margin-bottom: 4px; }
+    .subtitle { font-size: 14px; color: rgba(255,255,255,0.8); text-align: center; margin-bottom: 20px; }
+    
+    .input-group { margin-bottom: 16px; }
+    .input-group label { display: block; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; color: rgba(255,255,255,0.9); }
+    .input-group input { width: 100%; padding: 12px 16px; background: rgba(255,255,255,0.9); border: none; border-radius: 12px; font-size: 16px; color: #1e293b; font-weight: 600; }
+    
+    .tablet-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 12px; }
+    .tablet-grid button:nth-child(n+5) { grid-column: span 1; }
+    .tablet-btn {
+      background: rgba(255,255,255,0.15);
+      border: 2px solid rgba(255,255,255,0.25);
+      border-radius: var(--radius);
+      padding: 14px 8px;
+      color: #fff;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+    }
+    .tablet-btn:hover { background: rgba(255,255,255,0.25); border-color: rgba(255,255,255,0.5); }
+    .tablet-btn .role { font-size: 9px; font-weight: 600; opacity: 0.8; text-transform: uppercase; }
+    .tablet-btn.master-btn { background: rgba(245, 166, 35, 0.25); border-color: var(--orange); }
+
+    #mainApp { display: none; min-height: 100vh; flex-direction: column; }
+    .header {
+      background: var(--white);
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.03);
+    }
+    .header-left { display: flex; flex-direction: column; }
+    .tablet-label { font-size: 18px; font-weight: 800; color: var(--blue); }
+    .tablet-role-label { font-size: 13px; color: var(--text-muted); font-weight: 500; }
+    
+    .connection-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      background: #f1f5f9;
+      padding: 6px 12px;
+      border-radius: 20px;
+    }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); }
+    .status-dot.connected { background: var(--green); animation: pulseDot 2s infinite; }
+    @keyframes pulseDot { 0% { opacity: 0.4; } 50% { opacity: 1; } 100% { opacity: 0.4; } }
+
+    .app-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 16px;
+      gap: 16px;
+      max-width: 600px;
+      width: 100%;
+      margin: 0 auto;
+    }
+    
+    .card {
+      width: 100%;
+      background: var(--white);
+      border-radius: var(--radius);
+      padding: 18px;
+      box-shadow: var(--shadow);
+    }
+    .master-card { border: 2px dashed var(--orange); background: #fffbeb; }
+    .card h3 { font-size: 15px; margin-bottom: 10px; color: var(--blue-dark); font-weight: 700; display: flex; justify-content: space-between; align-items: center;}
+    .flex-inputs { display: flex; gap: 10px; }
+    .flex-inputs input { flex: 1; padding: 12px; border: 2px solid #e2e8f0; border-radius: 10px; font-size: 15px; font-weight: 600; }
+    .flex-inputs button { background: var(--blue); color: #fff; border: none; padding: 0 16px; border-radius: 10px; font-weight: 700; cursor: pointer; }
+    
+    .rounds-setup { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .rounds-setup label { font-size: 14px; font-weight: 700; color: #b45309; }
+    .rounds-setup input { width: 70px; padding: 8px; border: 2px solid var(--orange); border-radius: 8px; font-weight: 700; text-align: center; }
+
+    .live-counter-banner {
+      width: 100%;
+      background: #0f172a;
+      color: #fff;
+      border-radius: var(--radius);
+      padding: 14px;
+      text-align: center;
+      display: none;
+    }
+    .live-time-big { font-size: 38px; font-weight: 900; font-variant-numeric: tabular-nums; color: #38bdf8; }
+    .live-info-sub { font-size: 13px; color: #94a3b8; font-weight: 600; text-transform: uppercase; margin-top: 2px; }
+
+    .main-btn {
+      width: 100%;
+      height: 140px;
+      background: var(--blue);
+      color: #fff;
+      border: none;
+      border-radius: 24px;
+      font-size: 28px;
+      font-weight: 900;
+      cursor: pointer;
+      box-shadow: 0 8px 24px rgba(0,103,172,0.25);
+      transition: all 0.1s ease;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    .main-btn:active { transform: scale(0.98); }
+    .main-btn:disabled { background: #cbd5e1; color: #94a3b8; cursor: not-allowed; box-shadow: none; }
+    .main-btn.pressed { background: var(--green); }
+    .main-btn.waiting { background: #64748b; }
+    .main-btn.last-round { background: linear-gradient(135deg, #eab308, #ca8a04); animation: finalPulse 1s infinite alternate; box-shadow: 0 0 20px rgba(234,179,8,0.4); }
+    @keyframes finalPulse { from { transform: scale(1); } to { transform: scale(1.02); } }
+    .main-btn .btn-sub { font-size: 13px; font-weight: 500; opacity: 0.9; text-transform: uppercase; letter-spacing: 1px; }
+
+    .status-card { max-height: 260px; overflow-y: auto; }
+    .card-title { font-size: 13px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+    .status-badge { background: #e2e8f0; padding: 2px 8px; border-radius: 20px; font-size: 11px; color: #475569; }
+    
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid #f1f5f9;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .status-row:last-child { border-bottom: none; }
+    .status-row .runner-meta { font-size: 11px; color: var(--text-muted); font-weight: 500; }
+    .status-row .val { font-weight: 700; text-align: right; }
+    .status-row .val.active { color: var(--blue); }
+    .status-row .val.done { color: var(--green); }
+
+    .leaderboard-table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+    .leaderboard-table th { text-align: left; padding: 6px; font-size: 11px; color: var(--text-muted); text-transform: uppercase; border-bottom: 2px solid #f1f5f9; }
+    .leaderboard-table td { padding: 10px 6px; border-bottom: 1px solid #f1f5f9; font-size: 14px; font-weight: 600; vertical-align: top; }
+    .rank { width: 35px; font-weight: 800; color: var(--blue); }
+    .time-col { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; color: var(--blue-dark); }
+    .lap-history { font-size: 11px; color: var(--text-muted); font-weight: 500; margin-top: 3px; line-height: 1.4; }
+    .lap-history span { color: #0284c7; font-weight: 700; }
+    
+    .rank-1, .rank-2, .rank-3 { border-radius: 6px; display: inline-block; width: 22px; text-align: center; font-weight: 800; color: #fff; }
+    .rank-1 { background: linear-gradient(135deg, #ffe066, #d97706); }
+    .rank-2 { background: linear-gradient(135deg, #e2e8f0, #94a3b8); color: #334155; }
+    .rank-3 { background: linear-gradient(135deg, #ffedd5, #b45309); }
+
+    .master-actions { width: 100%; display: flex; flex-direction: column; gap: 8px; }
+    .reset-btn { width: 100%; padding: 14px; background: #fff; border: 2px solid var(--orange); border-radius: var(--radius); color: var(--orange); font-size: 15px; font-weight: 700; cursor: pointer; }
+    .reset-btn:disabled { border-color: #cbd5e1; color: #94a3b8; cursor: not-allowed; }
+    .mail-btn { width: 100%; padding: 14px; background: var(--green); border: none; border-radius: var(--radius); color: #fff; font-size: 15px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 10px rgba(0,168,107,0.2); text-align: center; }
+
+    #endOverlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: linear-gradient(135deg, #090d16 0%, #111827 100%);
+      z-index: 100;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      color: #fff;
+      text-align: center;
+    }
+    .finish-banner { font-size: 50px; margin-bottom: 4px; z-index: 102; }
+    .end-runner-name { font-size: 34px; font-weight: 800; color: #fff; margin-bottom: 4px; z-index: 102; text-shadow: 0 2px 10px rgba(0,0,0,0.5); }
+    
+    .podium-badge {
+      display: inline-block;
+      padding: 6px 18px;
+      border-radius: 50px;
+      font-size: 16px;
+      font-weight: 900;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+      z-index: 102;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+    }
+    .podium-1 { background: linear-gradient(135deg, #ffd700, #ff8c00); color: #fff; border: 2px solid #fff; animation: pulseGlow 1.5s infinite alternate; }
+    .podium-2 { background: linear-gradient(135deg, #f1f5f9, #94a3b8); color: #1e293b; border: 2px solid #fff; }
+    .podium-3 { background: linear-gradient(135deg, #fed7aa, #c2410c); color: #fff; border: 2px solid #fff; }
+    .podium-none { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.8); border: 1px solid rgba(255,255,255,0.2); }
+
+    @keyframes pulseGlow { 0% { box-shadow: 0 0 10px #ffd700; } 100% { box-shadow: 0 0 25px #ff8c00; } }
+    .podium-gap { font-size: 15px; font-weight: 700; color: #ffd700; margin-bottom: 12px; z-index: 102; text-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+
+    .end-title { font-size: 13px; text-transform: uppercase; letter-spacing: 2px; color: rgba(255,255,255,0.6); z-index: 102; }
+    .end-time { font-size: 52px; font-weight: 900; color: #fff; font-variant-numeric: tabular-nums; margin: 4px 0; z-index: 102; }
+    
+    .end-splits-card {
+      background: rgba(255, 255, 255, 0.07);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 12px;
+      padding: 12px;
+      width: 100%;
+      max-width: 360px;
+      margin-bottom: 20px;
+      z-index: 102;
+      font-size: 13px;
+      text-align: left;
+      max-height: 140px;
+      overflow-y: auto;
+    }
+    .end-split-row { display: flex; justify-content: space-between; margin-bottom: 4px; font-weight: 600;}
+    .end-split-row span:last-child { color: var(--orange); }
+
+    .overlay-buttons { width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: 10px; z-index: 102; }
+    .overlay-btn-secondary { background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); padding: 12px; border-radius: 12px; font-size: 14px; cursor: pointer; }
+    .auto-close-countdown { font-size: 12px; color: rgba(255,255,255,0.5); font-weight: 600; margin-top: 4px; text-transform: uppercase;}
+
+    #celebrationCanvas {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      z-index: 101; pointer-events: none;
+    }
+
+    /* Email Venster Modal Layout */
+    .email-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.6);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .email-modal-content {
+      background: var(--white);
+      border-radius: 20px;
+      padding: 24px;
+      width: 100%;
+      max-width: 420px;
+      box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04);
+    }
+    .email-modal h3 { font-size: 18px; font-weight: 800; color: var(--blue-dark); margin-bottom: 6px; }
+    .email-modal p { font-size: 13px; color: var(--text-muted); margin-bottom: 16px; font-weight: 500; }
+    .email-modal input { width: 100%; padding: 12px 16px; border: 2px solid #e2e8f0; border-radius: 12px; font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 16px; }
+    .email-modal input:focus { outline: none; border-color: var(--blue); }
+    .modal-actions { display: flex; gap: 10px; }
+    .modal-actions button { flex: 1; padding: 12px; border-radius: 12px; font-size: 14px; font-weight: 700; cursor: pointer; border: none; }
+    .btn-cancel { background: #f1f5f9; color: #475569; }
+    .btn-send { background: var(--green); color: #fff; }
+    .btn-send:disabled { background: #cbd5e1; color: #94a3b8; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+
+  <div id="selectScreen">
+    <div class="config-card">
+      <div class="logo">🏃‍♂️💨</div>
+      <h1>SprintSync Live</h1>
+      <p class="subtitle">Multi-Tablet Rondesysteem</p>
+      
+      <div class="input-group">
+        <label for="roomInput">School / Locatie Identificatie:</label>
+        <input type="text" id="roomInput" value="Coornhert Gymnasium" placeholder="Bijv. Coornhert Gymnasium">
+      </div>
+
+      <div class="input-group">
+        <label for="classInput">Klas Code:</label>
+        <input type="text" id="classInput" value="Klas 3A" placeholder="Bijv. Klas 3A">
+      </div>
+      
+      <p style="font-size: 13px; font-weight: 700; color: rgba(255,255,255,0.9); text-transform: uppercase; margin-bottom: 6px;">Kies jouw Tablet Nummer:</p>
+      <div class="tablet-grid">
+        <button class="tablet-btn master-btn" onclick="setupTablet(1)">T1 <span class="role">Master</span></button>
+        <button class="tablet-btn" onclick="setupTablet(2)">T2 <span class="role">Loper</span></button>
+        <button class="tablet-btn" onclick="setupTablet(3)">T3 <span class="role">Loper</span></button>
+        <button class="tablet-btn" onclick="setupTablet(4)">T4 <span class="role">Loper</span></button>
+        <button class="tablet-btn" onclick="setupTablet(5)">T5 <span class="role">Loper</span></button>
+        <button class="tablet-btn" onclick="setupTablet(6)">T6 <span class="role">Loper</span></button>
+        <button class="tablet-btn" onclick="setupTablet(7)">T7 <span class="role">Loper</span></button>
+      </div>
+    </div>
+  </div>
+
+  <div id="mainApp">
+    <div class="header">
+      <div class="header-left">
+        <span class="tablet-label" id="headerTabletName">Tablet X</span>
+        <span class="tablet-role-label" id="headerTabletRole">Klas: -</span>
+      </div>
+      <div class="connection-status">
+        <div class="status-dot" id="syncDot"></div>
+        <span id="syncStatusText">Verbinden...</span>
+      </div>
+    </div>
+
+    <div class="app-body">
+      
+      <div class="card master-card" id="masterCard" style="display: none;">
+        <h3>⚙️ Hoofd-instellingen (Tablet 1 Master)</h3>
+        <div class="rounds-setup">
+          <label for="roundsInput">Aantal te rennen rondes:</label>
+          <input type="number" id="roundsInput" value="5" min="1" max="50" onchange="updateMasterSettings()">
+        </div>
+        <div class="flex-inputs">
+          <input type="text" id="masterClassInput" placeholder="Nieuwe klas invoeren..." onchange="updateMasterSettings()">
+        </div>
+      </div>
+
+      <div class="card" id="nameCard">
+        <h3>🏃 Loper op deze Tablet: <span id="currentRunnerLabel" style="color:var(--blue);">Geen</span></h3>
+        <div class="flex-inputs">
+          <input type="text" id="runnerNameInput" placeholder="Typ naam leerling..." autocomplete="off">
+          <button onclick="registerLocalRunner()">Zet Klaar</button>
+        </div>
+      </div>
+
+      <div class="live-counter-banner" id="liveBanner">
+        <div class="live-time-big" id="liveTimeText">00:00.0</div>
+        <div class="live-info-sub" id="liveInfoText">Rondes te gaan: -</div>
+      </div>
+
+      <button class="main-btn" id="mainBtn" onclick="handleButtonClick()" disabled>
+        <span id="mainBtnText">WACHTEN...</span>
+        <span class="btn-sub" id="mainBtnSub">Voer eerst een naam in</span>
+      </button>
+
+      <div class="card status-card">
+        <div class="card-title">👥 Status Deelnemende Tablets <span class="status-badge" id="syncRoundsBadge">Rondes: -</span></div>
+        <div id="tabletsStatusContainer">
+          </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">🏆 Klassement van de Klas (<span id="leaderboardClassTitle">-</span>)</div>
+        <table class="leaderboard-table">
+          <thead>
+            <tr>
+              <th style="width: 35px;">Nr</th>
+              <th>Naam & Rondetijden</th>
+              <th style="text-align: right;">Eindtijd</th>
+            </tr>
+          </thead>
+          <tbody id="leaderboardBody">
+          </tbody>
+        </table>
+      </div>
+
+      <div class="master-actions" id="masterActions" style="display: none;">
+        <button class="reset-btn" id="globalResetBtn" onclick="broadcastGlobalReset()">🔄 Start Volgende Ronde (Iedereen Schoonmaken)</button>
+        <button class="mail-btn" onclick="openEmailModal()">📧 Rapportage Mailen</button>
+        <button class="reset-btn" style="border-color: var(--red); color: var(--red); margin-top: 4px;" onclick="clearLeaderboard()">🗑️ Wis Volledig Klassement</button>
+      </div>
+
+    </div>
+  </div>
+
+  <div id="endOverlay">
+    <canvas id="celebrationCanvas"></canvas>
+    <div class="finish-banner" id="endBannerIcon">🎉 🏁 🎉</div>
+    <div class="end-runner-name" id="endRunnerName">Loper</div>
+    
+    <div class="podium-badge" id="endPodiumBadge">-e Plaats</div>
+    <div class="podium-gap" id="endPodiumGap">-</div>
+    
+    <div class="end-title">Totale Eindtijd:</div>
+    <div class="end-time" id="endTimeDisplay">00:00.00</div>
+    
+    <div class="end-splits-card" id="endSplitsCard">
+      </div>
+    
+    <div class="overlay-buttons">
+      <button class="overlay-btn-secondary" onclick="closeOverlay()">Sluit Venster & Bekijk Klassement</button>
+      <div class="auto-close-countdown" id="autoCloseText">Dit venster sluit automatisch over 10s</div>
+    </div>
+  </div>
+
+  <div class="email-modal" id="emailModal">
+    <div class="email-modal-content">
+      <h3>📧 Klassement Verzenden</h3>
+      <p>Vul het e-mailadres in om de resultaten van <strong id="modalClassLabel">-</strong> te sturen.</p>
+      <input type="email" id="teacherEmailInput" placeholder="bijvoorbeeld@school.nl" autocomplete="on">
+      <div class="modal-actions">
+        <button class="btn-cancel" onclick="closeEmailModal()">Annuleren</button>
+        <button class="btn-send" id="btnSendMail" onclick="sendKlassementEmail()">Verzenden</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // =========================================================
+    // VUL HIER JOUW DRIE CODES VAN EMAILJS IN:
+    // =========================================================
+    const EMAILJS_PUBLIC_KEY = "tFiBL2OOR5C4SxwLu";
+    const EMAILJS_SERVICE_ID = "service_th9top9";
+    const EMAILJS_TEMPLATE_ID = "template_xflxvzn";
+
+    // Initialisatie van EmailJS
+    (function() {
+        emailjs.init(EMAILJS_PUBLIC_KEY); 
+    })();
+    // =========================================================
+
+    let tabletId = null;
+    let roomCode = "";
+    let classCode = "";
+    let client = null;
+    
+    const SERVER_HOST = "broker.hivemq.com";
+    const SERVER_PORT = 8000; 
+    const SERVER_PATH = "/mqtt";
+
+    // Lokale loper status data
+    let myRun = {
+      name: "",
+      status: "setup",
+      startTime: null,
+      lapsTotal: 5,
+      lapsLeft: 5,
+      lapsTimestamps: [],
+      lastClickTime: 0
+    };
+
+    // Globale netwerk sync state
+    let globalState = {
+      classCode: "",
+      targetRounds: 5,
+      tablets: {} 
+    };
+    
+    let leaderboard = [];
+    let liveTimerInterval = null;
+    let lockButtonTimeout = null;
+    let overlayTimerInterval = null;
+    let autoCloseTimeout = null;
+
+    // Grafische variabelen voor podium
+    let celebrationCtx = null;
+    let confettiParticles = [];
+    let animationId = null;
+    let spotlightAngle = 0;
+
+    function fmt(ms) {
+      if (!ms || isNaN(ms)) return '—';
+      const totalSec = ms / 1000;
+      const m = Math.floor(totalSec / 60);
+      const s = Math.floor(totalSec % 60);
+      const cs = Math.floor((ms % 1000) / 10);
+      return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${String(cs).padStart(2,'0')}`;
+    }
+
+    function fmtGap(ms) {
+      return (ms / 1000).toFixed(2) + 's';
+    }
+
+    function setupTablet(id) {
+      tabletId = id;
+      roomCode = document.getElementById('roomInput').value.trim().replace(/[^a-zA-Z0-9]/g, "");
+      classCode = document.getElementById('classInput').value.trim();
+      
+      if(!roomCode || !classCode) { alert("Voer een geldige school en klas in!"); return; }
+
+      globalState.classCode = classCode;
+
+      document.getElementById('selectScreen').style.display = 'none';
+      document.getElementById('mainApp').style.display = 'flex';
+      
+      document.getElementById('headerTabletName').textContent = `Tablet ${tabletId}`;
+      document.getElementById('headerTabletRole').textContent = `Klas: ${classCode}`;
+
+      // Master interface vrijschakelen
+      if (tabletId === 1) {
+        document.getElementById('masterCard').style.display = 'block';
+        document.getElementById('masterActions').style.display = 'flex';
+        document.getElementById('masterClassInput').value = classCode;
+      }
+
+      // Canvas setup
+      const canvas = document.getElementById('celebrationCanvas');
+      celebrationCtx = canvas.getContext('2d');
+      window.addEventListener('resize', () => {
+        if(canvas) { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+      });
+
+      // Laden lokale historie back-up indien aanwezig
+      const saved = localStorage.getItem(`leaderboard_${roomCode}_${classCode}`);
+      if (saved) { try { leaderboard = JSON.parse(saved); } catch(e){} }
+
+      updateLeaderboardUI();
+      connectMQTT();
+    }
+
+    function connectMQTT() {
+      const clientId = `lo_tab_${tabletId}_${Math.random().toString(16).substr(2, 5)}`;
+      document.getElementById('syncStatusText').textContent = "Verbinden...";
+      
+      client = new Paho.MQTT.Client(SERVER_HOST, SERVER_PORT, SERVER_PATH, clientId);
+
+      client.onConnectionLost = () => {
+        document.getElementById('syncDot').classList.remove('connected');
+        document.getElementById('syncStatusText').textContent = "Verbinding zoeken...";
+        setTimeout(connectMQTT, 2000);
+      };
+      
+      client.onMessageArrived = (message) => {
+        try {
+          const data = JSON.parse(message.payloadString);
+          
+          if (data.type === "SYNC_GLOBAL") {
+            globalState.targetRounds = data.payload.targetRounds;
+            globalState.classCode = data.payload.classCode;
+            document.getElementById('headerTabletRole').textContent = `Klas: ${globalState.classCode}`;
+            document.getElementById('syncRoundsBadge').textContent = `Rondes: ${globalState.targetRounds}`;
+            
+            if (tabletId !== 1) {
+              myRun.lapsTotal = globalState.targetRounds;
+              if (myRun.status === "setup" || myRun.status === "ready") {
+                myRun.lapsLeft = globalState.targetRounds;
+              }
+            }
+            updateUI();
+          } 
+          else if (data.type === "TABLET_STATUS") {
+            globalState.tablets[data.sender] = data.payload;
+            updateTabletsStatusUI();
+            checkMasterResetCondition();
+          } 
+          else if (data.type === "LEADERBOARD_UPDATE") {
+            leaderboard = data.payload;
+            localStorage.setItem(`leaderboard_${roomCode}_${globalState.classCode}`, JSON.stringify(leaderboard));
+            updateLeaderboardUI();
+          }
+          else if (data.type === "GLOBAL_RESET") {
+            localReset();
+          }
+          else if (data.type === "REQUEST_DISCOVERY") {
+            if (tabletId === 1) { updateMasterSettings(); sendLeaderboardToNetwork(); }
+            broadcastMyStatus();
+          }
+        } catch (e) {}
+      };
+
+      client.connect({
+        useSSL: false, timeout: 5,
+        onSuccess: () => {
+          document.getElementById('syncDot').classList.add('connected');
+          document.getElementById('syncStatusText').textContent = "Live Verbonden";
+          
+          client.subscribe(`lotijd/ronde/${roomCode}/global`);
+          client.subscribe(`lotijd/ronde/${roomCode}/tablets`);
+          
+          sendNetworkMessage(`lotijd/ronde/${roomCode}/tablets`, "REQUEST_DISCOVERY", {});
+          
+          if(tabletId === 1) {
+            updateMasterSettings();
+          }
+          broadcastMyStatus();
+          updateUI();
+        },
+        onFailure: () => {
+          setTimeout(connectMQTT, 3000);
+        }
+      });
+    }
+
+    function sendNetworkMessage(topic, type, payload) {
+      if (!client || !client.isConnected()) return;
+      const msg = new Paho.MQTT.Message(JSON.stringify({ type: type, sender: tabletId, payload: payload }));
+      msg.destinationName = topic;
+      client.send(msg);
+    }
+
+    function updateMasterSettings() {
+      if (tabletId !== 1) return;
+      const rInput = document.getElementById('roundsInput');
+      const cInput = document.getElementById('masterClassInput');
+      
+      globalState.targetRounds = parseInt(rInput.value) || 5;
+      globalState.classCode = cInput.value.trim() || classCode;
+      
+      myRun.lapsTotal = globalState.targetRounds;
+      if (myRun.status === "setup" || myRun.status === "ready") {
+        myRun.lapsLeft = globalState.targetRounds;
+      }
+
+      document.getElementById('syncRoundsBadge').textContent = `Rondes: ${globalState.targetRounds}`;
+      document.getElementById('headerTabletRole').textContent = `Klas: ${globalState.classCode}`;
+
+      sendNetworkMessage(`lotijd/ronde/${roomCode}/global`, "SYNC_GLOBAL", {
+        targetRounds: globalState.targetRounds,
+        classCode: globalState.classCode
+      });
+      updateUI();
+    }
+
+    function registerLocalRunner() {
+      const input = document.getElementById('runnerNameInput');
+      const name = input.value.trim();
+      if (!name) return;
+
+      myRun.name = name;
+      myRun.status = "ready";
+      myRun.lapsTotal = globalState.targetRounds;
+      myRun.lapsLeft = globalState.targetRounds;
+      myRun.lapsTimestamps = [];
+      
+      document.getElementById('currentRunnerLabel').textContent = name;
+      input.value = "";
+      
+      broadcastMyStatus();
+      updateUI();
+    }
+
+    function broadcastMyStatus() {
+      sendNetworkMessage(`lotijd/ronde/${roomCode}/tablets`, "TABLET_STATUS", {
+        name: myRun.name,
+        status: myRun.status,
+        lapsLeft: myRun.lapsLeft
+      });
+    }
+
+    function sendLeaderboardToNetwork() {
+      sendNetworkMessage(`lotijd/ronde/${roomCode}/global`, "LEADERBOARD_UPDATE", leaderboard);
+    }
+
+    function handleButtonClick() {
+      const now = Date.now();
+      
+      if (myRun.status === "ready") {
+        myRun.status = "running";
+        myRun.startTime = now;
+        myRun.lastClickTime = now;
+        myRun.lapsTimestamps = [now]; 
+        
+        document.getElementById('liveBanner').style.display = 'block';
+        liveTimerInterval = setInterval(updateLiveTimer, 100);
+        
+        broadcastMyStatus();
+        updateUI();
+      } 
+      else if (myRun.status === "running") {
+        myRun.lapsLeft--;
+        myRun.lapsTimestamps.push(now);
+        myRun.lastClickTime = now;
+
+        if (myRun.lapsLeft <= 0) {
+          myRun.status = "finished";
+          clearInterval(liveTimerInterval);
+          
+          const totalDuration = now - myRun.startTime;
+          
+          let lapTimes = [];
+          for(let i = 1; i < myRun.lapsTimestamps.length; i++) {
+            lapTimes.push(myRun.lapsTimestamps[i] - myRun.lapsTimestamps[i-1]);
+          }
+
+          const runId = "run_" + Math.random().toString(36).substr(2, 9);
+
+          const resultEntry = {
+            id: runId,
+            name: myRun.name,
+            totalTime: totalDuration,
+            laps: lapTimes,
+            timestamp: now
+          };
+          
+          leaderboard.push(resultEntry);
+          leaderboard.sort((a,b) => a.totalTime - b.totalTime);
+          
+          localStorage.setItem(`leaderboard_${roomCode}_${globalState.classCode}`, JSON.stringify(leaderboard));
+          sendLeaderboardToNetwork();
+
+          let rank = leaderboard.findIndex(x => x.id === runId) + 1;
+          let gapText = "";
+          
+          if (rank === 1) {
+            let nextRunner = leaderboard[1]; 
+            if (nextRunner) {
+              let diff = nextRunner.totalTime - totalDuration;
+              gapText = `🥇 Sneller dan nr 2 (${nextRunner.name}) met ${fmtGap(diff)}!`;
+            } else {
+              gapText = "🥇 Snelste tijd in de klas!";
+            }
+          } else if (rank > 1) {
+            let fasterRunner = leaderboard[rank - 2]; 
+            if (fasterRunner) {
+              let diff = totalDuration - fasterRunner.totalTime;
+              gapText = `⏱️ +${fmtGap(diff)} achter ${fasterRunner.name}`;
+            }
+          }
+
+          triggerLocalCelebration(rank, gapText, resultEntry);
+        } else {
+          myRun.status = "blocked";
+          let secondsLeft = 10;
+          
+          updateUI(); 
+          
+          lockButtonTimeout = setInterval(() => {
+            secondsLeft--;
+            if (secondsLeft <= 0) {
+              clearInterval(lockButtonTimeout);
+              myRun.status = "running";
+              updateUI();
+            } else {
+              document.getElementById('mainBtnText').textContent = `CHECK VERWERKT`;
+              document.getElementById('mainBtnSub').textContent = `Wacht ${secondsLeft}s op volgende ronde`;
+            }
+          }, 1000);
+        }
+        
+        broadcastMyStatus();
+        updateUI();
+      }
+    }
+
+    function updateLiveTimer() {
+      if (!myRun.startTime) return;
+      const diff = Date.now() - myRun.startTime;
+      document.getElementById('liveTimeText').textContent = fmt(diff).substring(3); 
+      document.getElementById('liveInfoText').textContent = `Rondes te gaan: ${myRun.lapsLeft}`;
+    }
+
+    function updateUI() {
+      const btn = document.getElementById('mainBtn');
+      const btnText = document.getElementById('mainBtnText');
+      const btnSub = document.getElementById('mainBtnSub');
+
+      btn.className = "main-btn";
+      btn.disabled = true;
+
+      if (myRun.status === "setup") {
+        btnText.textContent = "▶ KLAARSTAAN";
+        btnSub.textContent = "Voer bovenaan je naam in";
+      } 
+      else if (myRun.status === "ready") {
+        btnText.textContent = "▶ START RUN";
+        btnSub.textContent = `Loper: ${myRun.name} (Rondes: ${myRun.lapsTotal})`;
+        btn.disabled = false;
+      } 
+      else if (myRun.status === "running") {
+        btn.disabled = false;
+        if (myRun.lapsLeft === 1) {
+          btnText.textContent = "🏁 FINISH!";
+          btnSub.textContent = "Laatste meters, klik bij de streep!";
+          btn.classList.add('last-round');
+        } else {
+          btnText.textContent = "⏱️ RONDE CHECK";
+          btnSub.textContent = `Klik bij passeren (Nog ${myRun.lapsLeft}x)`;
+        }
+      } 
+      else if (myRun.status === "blocked") {
+        btn.disabled = true;
+        btn.classList.add('waiting');
+        btnText.textContent = "CHECK VERWERKT";
+        btnSub.textContent = "Wacht 10s op volgende ronde";
+      } 
+      else if (myRun.status === "finished") {
+        btnText.textContent = "✓ RUN FINISHED";
+        btnSub.textContent = "Wachten op de rest van de klas...";
+        btn.classList.add('pressed');
+      }
+    }
+
+    function updateTabletsStatusUI() {
+      const container = document.getElementById('tabletsStatusContainer');
+      container.innerHTML = "";
+      
+      for (let i = 1; i <= 7; i++) {
+        const tabData = globalState.tablets[i];
+        if (!tabData) continue; 
+        
+        const row = document.createElement('div');
+        row.className = "status-row";
+        
+        let statusText = "Standby";
+        let statusClass = "val pending";
+        
+        if (tabData.status === "ready") { statusText = "Ready"; statusClass = "val active"; }
+        else if (tabData.status === "running") { statusText = `Rennen (Nog ${tabData.lapsLeft})`; statusClass = "val active"; }
+        else if (tabData.status === "blocked") { statusText = "Ronde verwerkt..."; statusClass = "val active"; }
+        else if (tabData.status === "finished") { statusText = "GEFINISHT 🏁"; statusClass = "val done"; }
+        
+        row.innerHTML = `
+          <div>
+            <div>Tablet ${i} <span class="runner-meta">${tabData.name ? `(${tabData.name})` : ''}</span></div>
+          </div>
+          <span class="${statusClass}">${statusText}</span>
+        `;
+        container.appendChild(row);
+      }
+    }
+
+    function updateLeaderboardUI() {
+      document.getElementById('leaderboardClassTitle').textContent = globalState.classCode;
+      const tbody = document.getElementById('leaderboardBody');
+      if (!tbody) return;
+      tbody.innerHTML = "";
+      
+      if (leaderboard.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="3" style="text-align:center; color:var(--text-muted); padding:16px;">Nog geen tijden bekend voor deze klas.</td></tr>`;
+        return;
+      }
+
+      leaderboard.forEach((entry, idx) => {
+        const tr = document.createElement('tr');
+        let rankBadge = idx + 1;
+        if (idx === 0) rankBadge = `<span class="rank-1">1</span>`;
+        else if (idx === 1) rankBadge = `<span class="rank-2">2</span>`;
+        else if (idx === 2) rankBadge = `<span class="rank-3">3</span>`;
+
+        let lapsString = entry.laps ? entry.laps.map((l, i) => `R${i+1}: <span>${(l/1000).toFixed(1)}s</span>`).join(' | ') : '';
+
+        tr.innerHTML = `
+          <td class="rank">${rankBadge}</td>
+          <td>
+            <div>${entry.name}</div>
+            <div class="lap-history">${lapsString}</div>
+          </td>
+          <td class="time-col">${fmt(entry.totalTime)}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    /* EmailJS Logica (Met HTML layout) */
+    function openEmailModal() {
+      if (leaderboard.length === 0) { alert("Geen data om te verzenden! Het klassement is leeg."); return; }
+      document.getElementById('modalClassLabel').textContent = globalState.classCode;
+      document.getElementById('emailModal').style.display = "flex";
+      document.getElementById('teacherEmailInput').focus();
+    }
+
+    function closeEmailModal() {
+      document.getElementById('emailModal').style.display = "none";
+    }
+
+    function sendKlassementEmail() {
+      const emailInput = document.getElementById('teacherEmailInput');
+      const teacherEmail = emailInput.value.trim();
+      const sendBtn = document.getElementById('btnSendMail');
+
+      if (!teacherEmail || !emailInput.checkValidity()) {
+        alert("Vul een geldig e-mailadres in.");
+        return;
+      }
+
+      sendBtn.disabled = true;
+      sendBtn.textContent = "Verzenden...";
+
+      // Genereer tekstuele tabel als HTML voor EmailJS
+      let tabelTekst = `<h2>Resultaten Gymles</h2>`;
+      tabelTekst += `<b>Klas:</b> ${globalState.classCode}<br>`;
+      tabelTekst += `<b>Locatie:</b> ${roomCode}<br><br>`;
+      
+      tabelTekst += `<table style="width:100%; border-collapse: collapse; font-family: sans-serif;">`;
+      tabelTekst += `<tr style="background:#f4f7fa; text-align:left;">
+                        <th style="padding:8px; border-bottom:2px solid #ccc;">Positie</th>
+                        <th style="padding:8px; border-bottom:2px solid #ccc;">Loper</th>
+                        <th style="padding:8px; border-bottom:2px solid #ccc;">Eindtijd</th>
+                     </tr>`;
+
+      leaderboard.forEach((e, i) => {
+        let lapsDetails = e.laps.map((l, idx) => `R${idx+1}: ${(l/1000).toFixed(1)}s`).join(' | ');
+        tabelTekst += `<tr>
+                          <td style="padding:8px; border-bottom:1px solid #eee; font-weight:bold;">${i+1}</td>
+                          <td style="padding:8px; border-bottom:1px solid #eee;"><b>${e.name}</b><br><small style="color:#666;">${lapsDetails}</small></td>
+                          <td style="padding:8px; border-bottom:1px solid #eee; font-weight:bold; color:#0067ac;">${fmt(e.totalTime)}</td>
+                       </tr>`;
+      });
+      tabelTekst += `</table>`;
+
+      const templateParams = {
+        to_email: teacherEmail,
+        class_code: globalState.classCode,
+        location: roomCode,
+        leaderboard_data: tabelTekst
+      };
+
+      emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, templateParams)
+        .then(function(response) {
+           alert("🚀 Het klassement is succesvol verzonden naar: " + teacherEmail);
+           closeEmailModal();
+        }, function(error) {
+           alert("❌ E-mail verzenden mislukt: Controleer of je de To-Email hebt aangepast in EmailJS. Foutcode: " + JSON.stringify(error));
+        })
+        .finally(function() {
+           sendBtn.disabled = false;
+           sendBtn.textContent = "Verzenden";
+        });
+    }
+
+    // NIEUW: Functie om de lijst compleet te wissen
+    function clearLeaderboard() {
+      if (confirm(`⚠️ WEET JE HET ZEKER?\n\nJe gaat nu het HELE klassement voor klas ${globalState.classCode} wissen. Dit kan NIET ongedaan worden gemaakt!`)) {
+        leaderboard = [];
+        localStorage.removeItem(`leaderboard_${roomCode}_${globalState.classCode}`);
+        updateLeaderboardUI();
+        sendLeaderboardToNetwork();
+        alert("Klassement is succesvol gewist.");
+      }
+    }
+
+    function checkMasterResetCondition() {
+      if (tabletId !== 1) return;
+      const btn = document.getElementById('globalResetBtn');
+      
+      let totalActive = 0;
+      let totalFinished = 0;
+      
+      for (let i = 1; i <= 7; i++) {
+        const tab = globalState.tablets[i];
+        if (tab && tab.name) {
+          totalActive++;
+          if (tab.status === "finished" || tab.status === "setup") {
+            totalFinished++;
+          }
+        }
+      }
+      btn.disabled = (totalActive > 0 && totalFinished < totalActive) ? true : false;
+    }
+
+    function broadcastGlobalReset() {
+      if (tabletId !== 1) return;
+      sendNetworkMessage(`lotijd/ronde/${roomCode}/global`, "GLOBAL_RESET", {});
+      localReset();
+    }
+
+    function localReset() {
+      clearInterval(liveTimerInterval);
+      clearInterval(lockButtonTimeout);
+      clearInterval(overlayTimerInterval);
+      clearTimeout(autoCloseTimeout);
+      
+      myRun = {
+        name: "",
+        status: "setup",
+        startTime: null,
+        lapsTotal: globalState.targetRounds,
+        lapsLeft: globalState.targetRounds,
+        lapsTimestamps: [],
+        lastClickTime: 0
+      };
+
+      document.getElementById('currentRunnerLabel').textContent = "Geen";
+      document.getElementById('liveBanner').style.display = 'none';
+      closeOverlay();
+      
+      broadcastMyStatus();
+      updateUI();
+    }
+
+    function triggerLocalCelebration(rank, gapText, data) {
+      document.getElementById('endRunnerName').textContent = data.name;
+      document.getElementById('endTimeDisplay').textContent = fmt(data.totalTime);
+      
+      const card = document.getElementById('endSplitsCard');
+      card.innerHTML = "";
+      data.laps.forEach((time, index) => {
+        const d = document.createElement('div');
+        d.className = "end-split-row";
+        d.innerHTML = `<span>Ronde ${index + 1}:</span><span>${(time/1000).toFixed(2)}s</span>`;
+        card.appendChild(d);
+      });
+
+      const badge = document.getElementById('endPodiumBadge');
+      const gapDiv = document.getElementById('endPodiumGap');
+      const icon = document.getElementById('endBannerIcon');
+      
+      badge.className = "podium-badge";
+      
+      if (rank === 1) {
+        badge.textContent = "🏆 1e PLAATS (KLAS LEIDER!)";
+        badge.classList.add('podium-1');
+        icon.textContent = "👑 🏁 👑";
+      } else if (rank === 2) {
+        badge.textContent = "🥈 2e PLAATS (PODIUM)";
+        badge.classList.add('podium-2');
+        icon.textContent = "🎉 🏁 🎉";
+      } else if (rank === 3) {
+        badge.textContent = "🥉 3e PLAATS (PODIUM)";
+        badge.classList.add('podium-3');
+        icon.textContent = "🎉 🏁 🎉";
+      } else {
+        badge.textContent = `${rank}e Positie in de klas`;
+        badge.classList.add('podium-none');
+        icon.textContent = "🏁";
+      }
+
+      if (gapText) {
+        gapDiv.textContent = gapText;
+        gapDiv.style.display = "block";
+      } else {
+        gapDiv.style.display = "none";
+      }
+
+      document.getElementById('endOverlay').style.display = "flex";
+      
+      stopCelebration();
+      confettiParticles = [];
+      spotlightAngle = 0;
+      
+      const colors = ['#0067ac', '#00a86b', '#f5a623', '#ffd700', '#ffffff'];
+      for (let i = 0; i < 100; i++) {
+        confettiParticles.push({
+          x: Math.random() * window.innerWidth,
+          y: Math.random() * window.innerHeight - window.innerHeight,
+          r: Math.random() * 6 + 4,
+          d: Math.random() * window.innerWidth,
+          color: colors[Math.floor(Math.random() * colors.length)],
+          tilt: Math.random() * 10 - 5,
+          tiltAngleIncremental: Math.random() * 0.07 + 0.02,
+          tiltAngle: 0
+        });
+      }
+      
+      const canvas = document.getElementById('celebrationCanvas');
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      
+      animateLoop(rank);
+
+      let timeLeft = 10;
+      const countdownText = document.getElementById('autoCloseText');
+      countdownText.textContent = `Dit venster sluit automatisch over ${timeLeft}s`;
+      
+      clearInterval(overlayTimerInterval);
+      overlayTimerInterval = setInterval(() => {
+        timeLeft--;
+        if (timeLeft <= 0) {
+          clearInterval(overlayTimerInterval);
+        } else {
+          countdownText.textContent = `Dit venster sluit automatisch over ${timeLeft}s`;
+        }
+      }, 1000);
+
+      clearTimeout(autoCloseTimeout);
+      autoCloseTimeout = setTimeout(() => {
+        closeOverlay();
+      }, 10000);
+    }
+
+    function animateLoop(rank) {
+      celebrationCtx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+      
+      if (rank <= 3) {
+        spotlightAngle += 0.02;
+        celebrationCtx.save();
+        let sweep1 = Math.sin(spotlightAngle) * (window.innerWidth / 3);
+        let grad1 = celebrationCtx.createLinearGradient(0, window.innerHeight, window.innerWidth/2 + sweep1, window.innerHeight/4);
+        grad1.addColorStop(0, rank === 1 ? 'rgba(255,215,0,0.25)' : 'rgba(255,255,255,0.2)');
+        grad1.addColorStop(1, 'rgba(0,0,0,0)');
+        celebrationCtx.beginPath(); celebrationCtx.moveTo(0, window.innerHeight);
+        celebrationCtx.lineTo(window.innerWidth/2 + sweep1 - 50, window.innerHeight/4);
+        celebrationCtx.lineTo(window.innerWidth/2 + sweep1 + 50, window.innerHeight/4);
+        celebrationCtx.closePath(); celebrationCtx.fillStyle = grad1; celebrationCtx.fill(); celebrationCtx.restore();
+
+        celebrationCtx.save();
+        let sweep2 = Math.sin(-spotlightAngle - 0.5) * (window.innerWidth / 3);
+        let grad2 = celebrationCtx.createLinearGradient(window.innerWidth, window.innerHeight, window.innerWidth/2 + sweep2, window.innerHeight/4);
+        grad2.addColorStop(0, rank === 1 ? 'rgba(255,215,0,0.25)' : 'rgba(255,255,255,0.2)');
+        grad2.addColorStop(1, 'rgba(0,0,0,0)');
+        celebrationCtx.beginPath(); celebrationCtx.moveTo(window.innerWidth, window.innerHeight);
+        celebrationCtx.lineTo(window.innerWidth/2 + sweep2 - 50, window.innerHeight/4);
+        celebrationCtx.lineTo(window.innerWidth/2 + sweep2 + 50, window.innerHeight/4);
+        celebrationCtx.closePath(); celebrationCtx.fillStyle = grad2; celebrationCtx.fill(); celebrationCtx.restore();
+      }
+
+      confettiParticles.forEach((p) => {
+        p.tiltAngle += p.tiltAngleIncremental;
+        p.y += (Math.cos(p.d) + 3 + p.r / 2) / 2;
+        p.x += Math.sin(p.tiltAngle);
+        p.tilt = Math.sin(p.tiltAngle) * 15;
+
+        celebrationCtx.beginPath();
+        celebrationCtx.lineWidth = p.r;
+        celebrationCtx.strokeStyle = p.color;
+        celebrationCtx.moveTo(p.x + p.tilt + p.r / 2, p.y);
+        celebrationCtx.lineTo(p.x + p.tilt, p.y + p.tilt + p.r / 2);
+        celebrationCtx.stroke();
+      });
+
+      animationId = requestAnimationFrame(() => animateLoop(rank));
+    }
+
+    function stopCelebration() {
+      if (animationId) cancelAnimationFrame(animationId);
+    }
+
+    function closeOverlay() {
+      document.getElementById('endOverlay').style.display = 'none';
+      stopCelebration();
+      clearInterval(overlayTimerInterval);
+      clearTimeout(autoCloseTimeout);
+    }
+  </script>
+</body>
+</html>
